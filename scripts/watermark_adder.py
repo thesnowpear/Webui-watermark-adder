@@ -2,6 +2,7 @@ import os
 import json
 import zipfile
 import io
+import base64
 import gradio as gr
 from PIL import Image, ImageDraw, ImageFont
 from modules import scripts
@@ -51,6 +52,7 @@ class WatermarkAdderScript(scripts.Script):
 
                     # 编辑控件
                     with gr.Row():
+                        fetch_last_btn = gr.Button("📥 获取上次生成的图片", size="sm", elem_id="watermark_fetch_last")
                         undo_btn = gr.Button("↶ 撤销", size="sm")
                         clear_btn = gr.Button("🗑️ 清除图片", size="sm")
                         size_slider = gr.Slider(
@@ -129,6 +131,12 @@ class WatermarkAdderScript(scripts.Script):
 
                     selected_watermark = gr.State(None)
 
+                    # 隐藏组件：用于接收 JS 获取的图片
+                    fetched_image_data = gr.Textbox(
+                        visible=False,
+                        elem_id="watermark_fetched_image_data"
+                    )
+
                     # 生成按钮
                     generate_btn = gr.Button("✨ 生成水印图片", variant="primary", size="lg")
 
@@ -198,6 +206,17 @@ class WatermarkAdderScript(scripts.Script):
                     return self.render_watermarks()
                 return img
 
+            def fetch_last_image_func(image_data_url):
+                """从 base64 data URL 解码图片"""
+                if not image_data_url or not image_data_url.startswith("data:"):
+                    return gr.update()
+
+                # 去掉 data:image/png;base64, 前缀
+                header, encoded = image_data_url.split(",", 1)
+                image_bytes = base64.b64decode(encoded)
+                img = Image.open(io.BytesIO(image_bytes))
+                return img
+
             def generate_func(img, text, font_size, color, opacity, size, rotation):
                 if img is None:
                     return None, "请先上传图片"
@@ -258,6 +277,20 @@ class WatermarkAdderScript(scripts.Script):
             clear_btn.click(
                 fn=clear_image_func,
                 outputs=[image_editor, preview_image]
+            )
+
+            # 获取上次生成的图片：JS 负责抓取图片并写入隐藏组件，Python 负责解码
+            fetch_last_btn.click(
+                fn=None,
+                inputs=[],
+                outputs=[fetched_image_data],
+                _js="() => window.fetchLastGeneratedImage()"
+            )
+
+            fetched_image_data.change(
+                fn=fetch_last_image_func,
+                inputs=[fetched_image_data],
+                outputs=[image_editor]
             )
 
             undo_btn.click(

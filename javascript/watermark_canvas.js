@@ -287,6 +287,75 @@
         return tempCanvas.toDataURL('image/png');
     };
 
+    // 获取上一次生成的图片（从 txt2img 或 img2img gallery）
+    window.fetchLastGeneratedImage = function() {
+        // 尝试从多个可能的 gallery 位置获取图片
+        const selectors = [
+            '#txt2img_gallery .gallery-item img',
+            '#img2img_gallery .gallery-item img',
+            '#txt2img_gallery img.svelte-1pijsyv',
+            '#img2img_gallery img.svelte-1pijsyv',
+            '#txt2img_gallery .thumbnails img',
+            '#img2img_gallery .thumbnails img',
+            '#txt2img_gallery .grid-wrap img',
+            '#img2img_gallery .grid-wrap img',
+            '#txt2img_gallery img[data-testid="detailed-image"]',
+            '#img2img_gallery img[data-testid="detailed-image"]',
+            // Forge 特有选择器
+            '#txt2img_gallery .preview img',
+            '#img2img_gallery .preview img',
+        ];
+
+        let imgSrc = null;
+
+        for (const selector of selectors) {
+            const imgs = document.querySelectorAll(selector);
+            if (imgs.length > 0) {
+                // 取第一张（最近生成的）
+                imgSrc = imgs[0].src;
+                break;
+            }
+        }
+
+        if (!imgSrc) {
+            console.warn("No generated image found in gallery");
+            alert("未找到生成的图片。请先在 txt2img 或 img2img 中生成图片。");
+            return null;
+        }
+
+        // 如果是 blob URL 或本地 URL，需要通过 canvas 转换为 data URL
+        if (!imgSrc.startsWith('data:')) {
+            try {
+                const tempImg = new Image();
+                tempImg.crossOrigin = 'anonymous';
+
+                return new Promise((resolve) => {
+                    tempImg.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = tempImg.naturalWidth;
+                        canvas.height = tempImg.naturalHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(tempImg, 0, 0);
+                        const dataUrl = canvas.toDataURL('image/png');
+                        resolve(dataUrl);
+                    };
+                    tempImg.onerror = function() {
+                        console.error("Failed to load image from gallery");
+                        alert("获取图片失败，可能存在跨域限制。");
+                        resolve(null);
+                    };
+                    tempImg.src = imgSrc;
+                });
+            } catch (e) {
+                console.error("Error fetching image:", e);
+                alert("获取图片时出错: " + e.message);
+                return null;
+            }
+        }
+
+        return imgSrc;
+    };
+
     // 页面加载完成后初始化
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initWatermarkCanvas);
