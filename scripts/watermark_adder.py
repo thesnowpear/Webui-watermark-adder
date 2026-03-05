@@ -21,11 +21,9 @@ class WatermarkManager:
         self.images_dir.mkdir(parents=True, exist_ok=True)
         self.texts_dir.mkdir(parents=True, exist_ok=True)
 
-        self.current_watermarks = []
         self.original_image = None
 
     def list_image_watermarks(self):
-        """列出图片水印文件夹中的所有图片"""
         results = []
         for img_path in sorted(self.images_dir.glob("*")):
             if img_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']:
@@ -33,7 +31,6 @@ class WatermarkManager:
         return results
 
     def list_text_watermarks(self):
-        """列出文字水印配置"""
         results = []
         for text_path in sorted(self.texts_dir.glob("*.json")):
             try:
@@ -47,7 +44,6 @@ class WatermarkManager:
         return results
 
     def get_text_watermark_gallery(self):
-        """为文字水印生成预览图列表"""
         items = []
         for data in self.list_text_watermarks():
             preview_path = self.texts_dir / f"{data['_filename']}_preview.png"
@@ -56,7 +52,6 @@ class WatermarkManager:
         return items
 
     def get_image_watermark_gallery(self):
-        """图片水印列表"""
         items = []
         for img_path in self.list_image_watermarks():
             name = Path(img_path).stem
@@ -64,7 +59,6 @@ class WatermarkManager:
         return items
 
     def _create_text_preview(self, watermark_data, output_path):
-        """创建文字水印预览图"""
         img = Image.new('RGBA', (200, 100), (40, 40, 40, 255))
         draw = ImageDraw.Draw(img)
 
@@ -76,7 +70,7 @@ class WatermarkManager:
         text = watermark_data.get('text', '?')
         color = watermark_data.get('color', '#FFFFFF')
 
-        if color.startswith('#') and len(color) >= 7:
+        if isinstance(color, str) and color.startswith('#') and len(color) >= 7:
             r = int(color[1:3], 16)
             g = int(color[3:5], 16)
             b = int(color[5:7], 16)
@@ -91,7 +85,6 @@ class WatermarkManager:
         img.save(output_path)
 
     def apply_watermark_to_image(self, base_img, watermark_configs):
-        """将水印应用到图片上 (PIL 服务端渲染)"""
         if base_img is None:
             return None
 
@@ -113,14 +106,13 @@ class WatermarkManager:
                 opacity = wm.get('opacity', 0.7)
                 font_size = wm.get('font_size', 48)
 
-                # 按 size 比例缩放字体
                 scaled_font_size = int(font_size * size / 100)
                 try:
                     font = ImageFont.truetype("arial.ttf", scaled_font_size)
                 except Exception:
                     font = ImageFont.load_default()
 
-                if color.startswith('#') and len(color) >= 7:
+                if isinstance(color, str) and color.startswith('#') and len(color) >= 7:
                     r = int(color[1:3], 16)
                     g = int(color[3:5], 16)
                     b = int(color[5:7], 16)
@@ -128,7 +120,6 @@ class WatermarkManager:
                     r, g, b = 255, 255, 255
                 a = int(255 * opacity)
 
-                # 创建文字水印图层
                 bbox_img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
                 bbox_draw = ImageDraw.Draw(bbox_img)
                 bbox = bbox_draw.textbbox((0, 0), text, font=font)
@@ -154,13 +145,11 @@ class WatermarkManager:
 
                 wm_img = Image.open(img_path).convert('RGBA')
 
-                # 按 size 缩放
                 scale = size / 100.0
                 new_w = max(1, int(wm_img.width * scale))
                 new_h = max(1, int(wm_img.height * scale))
                 wm_img = wm_img.resize((new_w, new_h), Image.LANCZOS)
 
-                # 应用透明度
                 if opacity < 1.0:
                     alpha = wm_img.split()[3]
                     alpha = alpha.point(lambda p: int(p * opacity))
@@ -176,7 +165,6 @@ class WatermarkManager:
         return result.convert('RGB')
 
     def create_extractable_image(self, watermarked_image, original_image, output_path):
-        """创建可解压的图片包"""
         temp_watermarked = output_path.parent / "temp_watermarked.png"
         watermarked_image.save(temp_watermarked, format='PNG')
 
@@ -202,12 +190,53 @@ class WatermarkManager:
 manager = WatermarkManager()
 
 
+def _resolve_file_path(file_obj):
+    """从 Gradio File 组件的返回值中提取实际文件路径，兼容多种 Gradio 版本"""
+    if file_obj is None:
+        return None
+
+    # 情况1: 直接是字符串路径 (新版 Gradio)
+    if isinstance(file_obj, str):
+        if os.path.exists(file_obj):
+            return file_obj
+        return None
+
+    # 情况2: 有 .name 属性的临时文件对象 (标准 Gradio)
+    if hasattr(file_obj, 'name'):
+        path = file_obj.name
+        if isinstance(path, str) and os.path.exists(path):
+            return path
+
+    # 情况3: 字典格式 {'name': ..., 'data': ..., 'size': ...}
+    if isinstance(file_obj, dict):
+        path = file_obj.get('name', '')
+        if isinstance(path, str) and os.path.exists(path):
+            return path
+
+    return None
+
+
+def _resolve_orig_name(file_obj):
+    """获取上传文件的原始文件名"""
+    if isinstance(file_obj, str):
+        return Path(file_obj).name
+
+    if hasattr(file_obj, 'orig_name') and file_obj.orig_name:
+        return file_obj.orig_name
+
+    if hasattr(file_obj, 'name'):
+        return Path(file_obj.name).name
+
+    if isinstance(file_obj, dict):
+        return Path(file_obj.get('name', 'unknown.png')).name
+
+    return 'unknown.png'
+
+
 def on_ui_tabs():
     with gr.Blocks(analytics_enabled=False) as watermark_tab:
         # 全局状态
-        watermark_list_state = gr.State([])  # 当前添加的水印配置列表
-        selected_wm_type = gr.State("text")  # 当前选中的水印类型
-        selected_wm_data = gr.State({})  # 当前选中的水印数据
+        watermark_list_state = gr.State([])
 
         gr.Markdown("## Watermark Adder - 水印添加工具")
 
@@ -217,7 +246,6 @@ def on_ui_tabs():
                 gr.Markdown("### 水印库")
 
                 with gr.Tabs() as wm_tabs:
-                    # --- 图片水印库 ---
                     with gr.Tab("图片水印", id="tab_img_wm"):
                         img_wm_gallery = gr.Gallery(
                             label="图片水印",
@@ -243,7 +271,6 @@ def on_ui_tabs():
                             label="图片水印透明度"
                         )
 
-                    # --- 文字水印库 ---
                     with gr.Tab("文字水印", id="tab_txt_wm"):
                         txt_wm_gallery = gr.Gallery(
                             label="文字水印",
@@ -300,7 +327,6 @@ def on_ui_tabs():
                         label="旋转角度", elem_id="watermark_rotation"
                     )
 
-                # 当前水印列表展示
                 watermark_info = gr.Textbox(
                     label="已添加的水印",
                     interactive=False,
@@ -308,9 +334,12 @@ def on_ui_tabs():
                     placeholder="尚未添加水印，请先选择水印然后点击编辑区的图片添加",
                 )
 
-                # 隐藏组件
+                # 隐藏组件: Python→JS 桥梁
                 fetched_image_data = gr.Textbox(visible=False, elem_id="watermark_fetched_image_data")
+                # JS→Python: 点击坐标
                 click_coords = gr.Textbox(visible=False, elem_id="watermark_click_coords")
+                # Python→JS: 选中的水印信息 (JSON)，JS 监听此值来更新自己的 state
+                selected_wm_bridge = gr.Textbox(visible=False, elem_id="watermark_selected_bridge")
 
             # ========== 右栏：预览与保存 ==========
             with gr.Column(scale=1, min_width=280):
@@ -334,16 +363,44 @@ def on_ui_tabs():
 
         # ===== 事件处理 =====
 
+        selected_img_idx = gr.State(-1)
+        selected_txt_idx = gr.State(-1)
+
         def refresh_galleries():
             return manager.get_image_watermark_gallery(), manager.get_text_watermark_gallery()
 
-        def upload_image_watermark(file):
-            if file is None:
+        def upload_image_watermark(file_obj):
+            if file_obj is None:
                 return "请选择文件", manager.get_image_watermark_gallery()
-            filename = Path(file.name).name
-            save_path = manager.images_dir / filename
-            shutil.copy(file.name, save_path)
-            return f"已上传: {filename}", manager.get_image_watermark_gallery()
+
+            src_path = _resolve_file_path(file_obj)
+            if src_path is None:
+                return "上传失败：无法读取文件", manager.get_image_watermark_gallery()
+
+            orig_name = _resolve_orig_name(file_obj)
+            # 确保文件名安全
+            safe_name = "".join(c for c in orig_name if c.isalnum() or c in '._- ').strip()
+            if not safe_name:
+                safe_name = f"watermark_{int(time.time())}.png"
+            # 确保有图片扩展名
+            if not Path(safe_name).suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']:
+                safe_name += '.png'
+
+            save_path = manager.images_dir / safe_name
+
+            # 避免覆盖：如果同名文件存在，加时间戳
+            if save_path.exists():
+                stem = save_path.stem
+                suffix = save_path.suffix
+                save_path = manager.images_dir / f"{stem}_{int(time.time())}{suffix}"
+
+            shutil.copy2(src_path, save_path)
+
+            # 验证文件确实被复制
+            if save_path.exists():
+                return f"已上传: {save_path.name} ({save_path.stat().st_size} bytes)", manager.get_image_watermark_gallery()
+            else:
+                return "上传失败：文件复制失败", manager.get_image_watermark_gallery()
 
         def save_text_watermark(text, font_size, color, opacity, name):
             if not text or not name:
@@ -359,29 +416,44 @@ def on_ui_tabs():
             save_path = manager.texts_dir / f"{name}.json"
             with open(save_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            # 删除旧预览
             preview_path = manager.texts_dir / f"{name}_preview.png"
             if preview_path.exists():
                 preview_path.unlink()
             return f"已保存: {name}", manager.get_text_watermark_gallery()
 
         def select_image_watermark(evt: gr.SelectData, opacity):
+            """Gallery 选中图片水印 → 更新 bridge textbox → JS 会自动读取"""
             imgs = manager.list_image_watermarks()
             if evt.index < len(imgs):
                 path = imgs[evt.index]
                 name = Path(path).stem
-                return "image", {"type": "image", "path": path, "opacity": opacity}, f"已选择图片水印: {name}"
-            return "image", {}, "选择失败"
+                bridge_data = json.dumps({
+                    "type": "image",
+                    "path": path,
+                    "opacity": opacity,
+                    "ts": time.time()
+                }, ensure_ascii=False)
+                return f"已选择图片水印: {name}", bridge_data
+            return "选择失败", ""
 
         def select_text_watermark(evt: gr.SelectData):
+            """Gallery 选中文字水印 → 更新 bridge textbox → JS 会自动读取"""
             texts = manager.list_text_watermarks()
             if evt.index < len(texts):
                 data = texts[evt.index]
-                return "text", data, f"已选择文字水印: {data.get('text', '?')}"
-            return "text", {}, "选择失败"
+                bridge_data = json.dumps({
+                    "type": "text",
+                    "text": data.get("text", ""),
+                    "font_size": data.get("font_size", 48),
+                    "color": data.get("color", "#FFFFFF"),
+                    "opacity": data.get("opacity", 0.7),
+                    "ts": time.time()
+                }, ensure_ascii=False)
+                return f"已选择文字水印: {data.get('text', '?')}", bridge_data
+            return "选择失败", ""
 
-        def add_watermark_at_position(coords_json, wm_type, wm_data, wm_list, size, rotation, img_opacity):
-            """通过 JS 点击坐标添加水印"""
+        def add_watermark_at_position(coords_json, bridge_json, wm_list, size, rotation, img_opacity):
+            """JS 点击坐标 + bridge 中的选中信息 → 添加水印到列表"""
             if not coords_json:
                 return wm_list, format_watermark_list(wm_list)
             try:
@@ -389,6 +461,18 @@ def on_ui_tabs():
             except Exception:
                 return wm_list, format_watermark_list(wm_list)
 
+            # 从 bridge 中读取当前选中的水印信息
+            wm_data = {}
+            if bridge_json:
+                try:
+                    wm_data = json.loads(bridge_json)
+                except Exception:
+                    pass
+
+            if not wm_data or 'type' not in wm_data:
+                return wm_list, format_watermark_list(wm_list) + "\n(请先在左侧水印库中选择一个水印)"
+
+            wm_type = wm_data['type']
             x_ratio = coords.get('x', 0.5)
             y_ratio = coords.get('y', 0.5)
 
@@ -400,19 +484,18 @@ def on_ui_tabs():
                 'rotation': rotation,
             }
 
-            if wm_type == 'text' and wm_data:
+            if wm_type == 'text':
                 new_wm['text'] = wm_data.get('text', '水印')
                 new_wm['color'] = wm_data.get('color', '#FFFFFF')
                 new_wm['opacity'] = wm_data.get('opacity', 0.7)
                 new_wm['font_size'] = wm_data.get('font_size', 48)
-            elif wm_type == 'image' and wm_data:
+            elif wm_type == 'image':
                 new_wm['path'] = wm_data.get('path', '')
                 new_wm['opacity'] = img_opacity
             else:
-                return wm_list, format_watermark_list(wm_list) + "\n(请先选择一个水印)"
+                return wm_list, format_watermark_list(wm_list) + "\n(未知水印类型)"
 
-            wm_list = wm_list or []
-            wm_list = list(wm_list) + [new_wm]
+            wm_list = list(wm_list or []) + [new_wm]
             return wm_list, format_watermark_list(wm_list)
 
         def format_watermark_list(wm_list):
@@ -476,71 +559,11 @@ def on_ui_tabs():
             img = Image.open(io.BytesIO(image_bytes))
             return img
 
-        def delete_selected_img_wm(evt: gr.SelectData):
-            imgs = manager.list_image_watermarks()
-            if evt.index < len(imgs):
-                path = Path(imgs[evt.index])
-                if path.exists():
-                    path.unlink()
-                return f"已删除: {path.name}", manager.get_image_watermark_gallery()
-            return "未选中", manager.get_image_watermark_gallery()
-
-        def delete_selected_txt_wm(evt: gr.SelectData):
-            texts = manager.list_text_watermarks()
-            if evt.index < len(texts):
-                data = texts[evt.index]
-                json_path = Path(data['_path'])
-                preview_path = manager.texts_dir / f"{data['_filename']}_preview.png"
-                if json_path.exists():
-                    json_path.unlink()
-                if preview_path.exists():
-                    preview_path.unlink()
-                return f"已删除: {data['_filename']}", manager.get_text_watermark_gallery()
-            return "未选中", manager.get_text_watermark_gallery()
-
-        # 删除使用State记录选中索引
-        selected_img_idx = gr.State(-1)
-        selected_txt_idx = gr.State(-1)
-
-        # --- 绑定事件 ---
-
-        # 刷新水印库
-        refresh_wm_btn.click(fn=refresh_galleries, outputs=[img_wm_gallery, txt_wm_gallery])
-
-        # 上传图片水印
-        upload_img_btn.click(
-            fn=upload_image_watermark,
-            inputs=[upload_img_wm],
-            outputs=[wm_status, img_wm_gallery]
-        )
-
-        # 保存文字水印
-        save_txt_wm_btn.click(
-            fn=save_text_watermark,
-            inputs=[wm_text_input, wm_font_size, wm_text_color, wm_text_opacity, wm_text_name],
-            outputs=[wm_status, txt_wm_gallery]
-        )
-
-        # 选择水印
-        img_wm_gallery.select(
-            fn=select_image_watermark,
-            inputs=[img_wm_opacity],
-            outputs=[selected_wm_type, selected_wm_data, wm_status]
-        )
-        txt_wm_gallery.select(
-            fn=select_text_watermark,
-            outputs=[selected_wm_type, selected_wm_data, wm_status]
-        )
-
-        # 记录选中索引用于删除
         def record_img_idx(evt: gr.SelectData):
             return evt.index
 
         def record_txt_idx(evt: gr.SelectData):
             return evt.index
-
-        img_wm_gallery.select(fn=record_img_idx, outputs=[selected_img_idx])
-        txt_wm_gallery.select(fn=record_txt_idx, outputs=[selected_txt_idx])
 
         def do_delete_img_wm(idx):
             imgs = manager.list_image_watermarks()
@@ -564,6 +587,37 @@ def on_ui_tabs():
                 return f"已删除: {data['_filename']}", manager.get_text_watermark_gallery(), -1
             return "请先选中要删除的水印", manager.get_text_watermark_gallery(), -1
 
+        # --- 绑定事件 ---
+
+        refresh_wm_btn.click(fn=refresh_galleries, outputs=[img_wm_gallery, txt_wm_gallery])
+
+        upload_img_btn.click(
+            fn=upload_image_watermark,
+            inputs=[upload_img_wm],
+            outputs=[wm_status, img_wm_gallery]
+        )
+
+        save_txt_wm_btn.click(
+            fn=save_text_watermark,
+            inputs=[wm_text_input, wm_font_size, wm_text_color, wm_text_opacity, wm_text_name],
+            outputs=[wm_status, txt_wm_gallery]
+        )
+
+        # 选择水印 → 更新状态文本 + bridge (Python→JS)
+        img_wm_gallery.select(
+            fn=select_image_watermark,
+            inputs=[img_wm_opacity],
+            outputs=[wm_status, selected_wm_bridge]
+        )
+        txt_wm_gallery.select(
+            fn=select_text_watermark,
+            outputs=[wm_status, selected_wm_bridge]
+        )
+
+        # 记录选中索引用于删除
+        img_wm_gallery.select(fn=record_img_idx, outputs=[selected_img_idx])
+        txt_wm_gallery.select(fn=record_txt_idx, outputs=[selected_txt_idx])
+
         delete_img_wm_btn.click(
             fn=do_delete_img_wm,
             inputs=[selected_img_idx],
@@ -575,19 +629,18 @@ def on_ui_tabs():
             outputs=[wm_status, txt_wm_gallery, selected_txt_idx]
         )
 
-        # 点击坐标 -> 添加水印
+        # JS 点击坐标 → 添加水印
+        # 从 bridge 获取选中水印数据，而非 gr.State (避免 JS/Python 不同步问题)
         click_coords.change(
             fn=add_watermark_at_position,
-            inputs=[click_coords, selected_wm_type, selected_wm_data, watermark_list_state, wm_size_slider, wm_rotation_slider, img_wm_opacity],
+            inputs=[click_coords, selected_wm_bridge, watermark_list_state, wm_size_slider, wm_rotation_slider, img_wm_opacity],
             outputs=[watermark_list_state, watermark_info]
         )
 
-        # 撤销 / 清除水印
         undo_btn.click(fn=undo_watermark, inputs=[watermark_list_state], outputs=[watermark_list_state, watermark_info])
         clear_wm_btn.click(fn=clear_watermarks, outputs=[watermark_list_state, watermark_info])
         clear_btn.click(fn=clear_image, outputs=[image_editor, preview_image, watermark_list_state, watermark_info])
 
-        # 获取上次生成的图片
         fetch_last_btn.click(
             fn=None,
             inputs=[],
@@ -596,18 +649,15 @@ def on_ui_tabs():
         )
         fetched_image_data.change(fn=fetch_last_image, inputs=[fetched_image_data], outputs=[image_editor])
 
-        # 生成
         generate_btn.click(
             fn=generate_watermarked,
             inputs=[image_editor, watermark_list_state],
             outputs=[preview_image, save_status]
         )
 
-        # 保存
         save_btn.click(fn=save_normal, inputs=[preview_image], outputs=[save_status])
         save_extract_btn.click(fn=save_extractable, inputs=[preview_image], outputs=[save_status])
 
-        # 页面加载时刷新水印库
         watermark_tab.load(fn=refresh_galleries, outputs=[img_wm_gallery, txt_wm_gallery])
 
     return [(watermark_tab, "Watermark Adder", "watermark_adder_tab")]
