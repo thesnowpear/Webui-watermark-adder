@@ -1,0 +1,25 @@
+{
+  "name": "sd-webui-watermark-adder",
+  "version": "1.0.0",
+  "description": "A watermark adding extension for Stable Diffusion WebUI Forge",
+  "author": "Your Name",
+  "license": "MIT",
+  "keywords": [
+    "stable-diffusion",
+    "webui-forge",
+    "watermark",
+    "image-processing",
+    "extension"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/sd-webui-watermark-adder.git"
+  },
+  "dependencies": {
+    "pillow": ">=9.0.0"
+  },
+  "compatibility": {
+    "python": ">=3.8",
+    "webui-forge": ">=1.0.0"
+  }
+}
