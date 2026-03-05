@@ -1,4 +1,6 @@
-// 水印画布交互脚本 - 通过 #watermark_selected_bridge 与 Python 端同步选中状态
+// 水印画布交互脚本
+// 通过 #watermark_selected_bridge 与 Python 端同步选中状态
+// 通过 #watermark_click_coords 将点击坐标发回 Python
 (function () {
     'use strict';
 
@@ -10,14 +12,16 @@
         isHovering: false,
         mouseX: 0,
         mouseY: 0,
-        // 从 bridge textbox 同步的选中水印信息
         selectedType: null,
         selectedData: {},
         // 前端已添加水印的预览列表 (仅用于 canvas 绘制)
         watermarks: [],
         size: 100,
         rotation: 0,
+        opacity: 0.7,
         canvasReady: false,
+        // 图片水印缓存: path -> Image
+        imgCache: {},
     };
 
     // ============ 初始化 ============
@@ -31,18 +35,15 @@
             clearInterval(poll);
             state.editorEl = editorWrap;
 
-            // 开始监听 bridge textbox（不依赖图片是否存在）
             watchBridge();
-            // 开始监听滑块
             watchSliders();
-            // 开始监听图片出现
             watchForImage();
 
             console.log('[Watermark] Watcher started');
         }, 500);
     }
 
-    // ============ Bridge: 监听 Python→JS 的选中信息 ============
+    // ============ Bridge: 监听 Python->JS 的选中信息 ============
     function watchBridge() {
         const poll = setInterval(() => {
             const bridgeEl = document.querySelector('#watermark_selected_bridge textarea');
@@ -50,14 +51,10 @@
 
             clearInterval(poll);
 
-            // 监听值变化
             const observer = new MutationObserver(() => readBridge(bridgeEl));
             observer.observe(bridgeEl, { attributes: true, childList: true, characterData: true });
-
-            // 也监听 input 事件 (Gradio 更新值时触发)
             bridgeEl.addEventListener('input', () => readBridge(bridgeEl));
-
-            // 轮询兜底（有些 Gradio 版本不触发 mutation）
+            // 轮询兜底
             setInterval(() => readBridge(bridgeEl), 500);
 
             console.log('[Watermark] Bridge connected');
@@ -73,88 +70,120 @@
 
         try {
             const data = JSON.parse(val);
-            state.selectedType = data.type || null;
-            state.selectedData = data;
-            console.log('[Watermark] Selection updated from bridge:', data.type, data);
+            if (!data.type) {
+                // 取消选择
+                state.selectedType = null;
+                state.selectedData = {};
+                console.log('[Watermark] Deselected');
+            } else {
+                state.selectedType = data.type;
+                state.selectedData = data;
+                // 预加载图片水印
+                if (data.type === 'image' && data.path) {
+                    preloadWatermarkImage(data.path);
+                }
+                console.log('[Watermark] Selected:', data.type);
+            }
+            redraw();
         } catch (e) {
-            // ignore parse errors
+            // ignore
         }
     }
 
-    // ============ 监听图片出现并创建 Canvas ============
+    // 预加载水印图片到缓存
+    function preloadWatermarkImage(path) {
+        if (state.imgCache[path]) return;
+        const img = new window.Image();
+        img.onload = () => {
+            state.imgCache[path] = img;
+            console.log('[Watermark] Image cached:', path, img.width, 'x', img.height);
+            redraw();
+        };
+        img.onerror = () => {
+            console.warn('[Watermark] Failed to load image:', path);
+        };
+        // WebUI 通过 /file= 路由访问扩展文件
+        img.src = '/file=' + path;
+    }
+
+    // ============ 监听图片出现/消失并管理 Canvas ============
     function watchForImage() {
         const editorWrap = state.editorEl;
 
         function trySetupCanvas() {
-            // 查找 Gradio Image 组件内部的 img 标签
             const imgEl = editorWrap.querySelector('img');
-            if (!imgEl || !imgEl.src || imgEl.src === '') return;
-            if (state.canvasReady && state.imgEl === imgEl) return;
 
-            // 新的图片元素出现
+            // 图片不存在或被清除 -> 移除 canvas
+            if (!imgEl || !imgEl.src || imgEl.src === '' || imgEl.src === 'data:,') {
+                if (state.canvasReady) {
+                    removeCanvas();
+                }
+                return;
+            }
+
+            // 同一个 img 元素且 canvas 已就绪 -> 只同步尺寸
+            if (state.canvasReady && state.imgEl === imgEl) {
+                syncCanvasSize();
+                return;
+            }
+
+            // 新的 img 元素出现 -> 创建 canvas
             state.imgEl = imgEl;
+            removeCanvas();
 
-            // 移除旧 canvas
-            const oldCanvas = document.querySelector('#watermark-overlay-canvas');
-            if (oldCanvas) oldCanvas.remove();
-
-            state.canvasReady = false;
-
-            // 等一帧让图片布局完成
-            requestAnimationFrame(() => {
-                setupCanvas();
-            });
+            // 等图片加载完再创建 canvas
+            if (imgEl.complete && imgEl.naturalWidth > 0) {
+                requestAnimationFrame(() => setupCanvas());
+            } else {
+                imgEl.addEventListener('load', () => {
+                    requestAnimationFrame(() => setupCanvas());
+                }, { once: true });
+            }
         }
 
-        // 使用 MutationObserver 监听 DOM 变化
         const observer = new MutationObserver(() => {
-            trySetupCanvas();
+            // 延迟一帧避免频繁触发
+            requestAnimationFrame(trySetupCanvas);
         });
         observer.observe(editorWrap, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
 
-        // 也用轮询作为兜底
-        setInterval(trySetupCanvas, 1000);
-
-        // 立即尝试一次
+        setInterval(trySetupCanvas, 1500);
         trySetupCanvas();
     }
 
-    // ============ Canvas 覆盖层 ============
+    // ============ Canvas 创建/移除 ============
     function setupCanvas() {
         const imgEl = state.imgEl;
         if (!imgEl) return;
 
-        // 找合适的容器：需要是图片的直接包裹容器
         const container = imgEl.closest('.image-container')
             || imgEl.closest('[data-testid="image"]')
             || imgEl.parentElement;
         if (!container) return;
 
+        // 移除旧的
+        removeCanvas();
+
         const canvas = document.createElement('canvas');
         canvas.id = 'watermark-overlay-canvas';
 
-        // 获取图片相对于容器的位置
         const containerRect = container.getBoundingClientRect();
         const imgRect = imgEl.getBoundingClientRect();
 
         const offsetTop = imgRect.top - containerRect.top;
         const offsetLeft = imgRect.left - containerRect.left;
 
-        canvas.style.cssText = `
-            position: absolute;
-            top: ${offsetTop}px;
-            left: ${offsetLeft}px;
-            width: ${imgRect.width}px;
-            height: ${imgRect.height}px;
-            z-index: 100;
-            pointer-events: auto;
-            cursor: crosshair;
-        `;
+        canvas.style.cssText =
+            'position:absolute;' +
+            'top:' + offsetTop + 'px;' +
+            'left:' + offsetLeft + 'px;' +
+            'width:' + imgRect.width + 'px;' +
+            'height:' + imgRect.height + 'px;' +
+            'z-index:100;pointer-events:auto;cursor:crosshair;';
 
-        canvas.width = imgRect.width;
-        canvas.height = imgRect.height;
+        canvas.width = Math.round(imgRect.width);
+        canvas.height = Math.round(imgRect.height);
 
-        // 确保容器是 positioned
         const containerStyle = window.getComputedStyle(container);
         if (containerStyle.position === 'static') {
             container.style.position = 'relative';
@@ -166,24 +195,32 @@
         state.ctx = canvas.getContext('2d');
         state.canvasReady = true;
 
-        // 事件
         canvas.addEventListener('mousemove', onMouseMove);
         canvas.addEventListener('mouseleave', onMouseLeave);
         canvas.addEventListener('mouseenter', () => { state.isHovering = true; });
         canvas.addEventListener('click', onClick);
         canvas.addEventListener('wheel', onWheel, { passive: false });
 
-        // 窗口大小变化时重建
         if (state._resizeObserver) {
             state._resizeObserver.disconnect();
         }
-        state._resizeObserver = new ResizeObserver(() => {
-            syncCanvasSize();
-        });
+        state._resizeObserver = new ResizeObserver(() => syncCanvasSize());
         state._resizeObserver.observe(imgEl);
 
-        console.log('[Watermark] Canvas ready', imgRect.width, 'x', imgRect.height);
+        console.log('[Watermark] Canvas ready', canvas.width, 'x', canvas.height);
         redraw();
+    }
+
+    function removeCanvas() {
+        const old = document.querySelector('#watermark-overlay-canvas');
+        if (old) old.remove();
+        if (state._resizeObserver) {
+            state._resizeObserver.disconnect();
+            state._resizeObserver = null;
+        }
+        state.canvas = null;
+        state.ctx = null;
+        state.canvasReady = false;
     }
 
     function syncCanvasSize() {
@@ -199,13 +236,18 @@
 
         const offsetTop = imgRect.top - containerRect.top;
         const offsetLeft = imgRect.left - containerRect.left;
+        const w = Math.round(imgRect.width);
+        const h = Math.round(imgRect.height);
+
+        // 只在尺寸变化时更新
+        if (state.canvas.width === w && state.canvas.height === h) return;
 
         state.canvas.style.top = offsetTop + 'px';
         state.canvas.style.left = offsetLeft + 'px';
-        state.canvas.style.width = imgRect.width + 'px';
-        state.canvas.style.height = imgRect.height + 'px';
-        state.canvas.width = imgRect.width;
-        state.canvas.height = imgRect.height;
+        state.canvas.style.width = w + 'px';
+        state.canvas.style.height = h + 'px';
+        state.canvas.width = w;
+        state.canvas.height = h;
 
         redraw();
     }
@@ -217,13 +259,17 @@
                 || document.querySelector('#watermark_size input[type="number"]');
             const rotEl = document.querySelector('#watermark_rotation input[type="range"]')
                 || document.querySelector('#watermark_rotation input[type="number"]');
+            const opacEl = document.querySelector('#watermark_opacity input[type="range"]')
+                || document.querySelector('#watermark_opacity input[type="number"]');
 
-            if (sizeEl && rotEl) {
+            if (sizeEl && rotEl && opacEl) {
                 clearInterval(poll);
                 sizeEl.addEventListener('input', (e) => { state.size = parseFloat(e.target.value); redraw(); });
                 rotEl.addEventListener('input', (e) => { state.rotation = parseFloat(e.target.value); redraw(); });
+                opacEl.addEventListener('input', (e) => { state.opacity = parseFloat(e.target.value); redraw(); });
                 state.size = parseFloat(sizeEl.value) || 100;
                 state.rotation = parseFloat(rotEl.value) || 0;
+                state.opacity = parseFloat(opacEl.value) || 0.7;
                 console.log('[Watermark] Sliders connected');
             }
         }, 500);
@@ -245,15 +291,13 @@
 
     function onClick(e) {
         if (!state.selectedType) {
-            console.log('[Watermark] No watermark selected - please select from gallery first');
+            console.log('[Watermark] No watermark selected');
             return;
         }
 
         const rect = state.canvas.getBoundingClientRect();
         const cx = e.clientX - rect.left;
         const cy = e.clientY - rect.top;
-
-        // 转为比例 (0~1)
         const xRatio = cx / rect.width;
         const yRatio = cy / rect.height;
 
@@ -267,23 +311,20 @@
             yRatio: yRatio,
             size: state.size,
             rotation: state.rotation,
+            opacity: state.opacity,
         });
 
         redraw();
 
-        // 传递坐标到 Python (通过隐藏 Textbox)
+        // 发送坐标到 Python
         const coordsEl = document.querySelector('#watermark_click_coords textarea');
         if (coordsEl) {
-            // 每次必须设不同的值让 Gradio .change 事件触发
             const value = JSON.stringify({ x: xRatio, y: yRatio, ts: Date.now() });
-            // 使用 nativeInputValueSetter 确保 Gradio 检测到变化
             const nativeSetter = Object.getOwnPropertyDescriptor(
                 window.HTMLTextAreaElement.prototype, 'value'
             ).set;
             nativeSetter.call(coordsEl, value);
             coordsEl.dispatchEvent(new Event('input', { bubbles: true }));
-        } else {
-            console.warn('[Watermark] Cannot find #watermark_click_coords textarea');
         }
 
         console.log('[Watermark] Click at', xRatio.toFixed(3), yRatio.toFixed(3));
@@ -327,7 +368,7 @@
 
         // 已添加的水印
         state.watermarks.forEach((wm) => {
-            drawWatermarkPreview(ctx, wm, 0.8);
+            drawWatermarkPreview(ctx, wm, wm.opacity || 0.7);
         });
 
         // 鼠标跟随预览
@@ -339,67 +380,77 @@
                 y: state.mouseY,
                 size: state.size,
                 rotation: state.rotation,
-            }, 0.4);
+                opacity: state.opacity,
+            }, state.opacity * 0.6); // 预览再淡一些
         }
     }
 
     function drawWatermarkPreview(ctx, wm, alpha) {
         ctx.save();
-        ctx.globalAlpha = alpha;
+        ctx.globalAlpha = Math.max(0.05, alpha);
         ctx.translate(wm.x, wm.y);
         ctx.rotate((wm.rotation * Math.PI) / 180);
 
         if (wm.type === 'text') {
-            const fontSize = Math.max(8, (wm.data.font_size || 48) * wm.size / 100 * 0.5);
-            ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+            // 文字水印预览
+            // 计算预览字号：要和 Python 端的 apply 一致
+            // Python: scaled_font_size = font_size * size / 100, 然后在原图上渲染
+            // Canvas 是屏幕像素，原图可能更大，这里用一个合理的比例
+            const baseFontSize = wm.data.font_size || wm.data.fontSize || 48;
+            const fontSize = Math.max(8, baseFontSize * wm.size / 100 * 0.5);
+            ctx.font = 'bold ' + fontSize + 'px Arial, sans-serif';
             ctx.fillStyle = wm.data.color || '#FFFFFF';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            // 描边使文字更易见
-            ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-            ctx.lineWidth = Math.max(1, fontSize / 15);
+            ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+            ctx.lineWidth = Math.max(1, fontSize / 20);
             const text = wm.data.text || '水印';
             ctx.strokeText(text, 0, 0);
             ctx.fillText(text, 0, 0);
+
         } else if (wm.type === 'image') {
-            const s = Math.max(20, wm.size * 0.5);
+            // 图片水印预览：使用真实图片
+            const path = wm.data.path || '';
+            const cachedImg = state.imgCache[path];
 
-            // 加载并绘制实际水印图片
-            if (wm.data.path && !wm._imgAttempted) {
-                wm._imgAttempted = true;
-                const img = new window.Image();
-                img.onload = () => {
-                    wm._img = img;
-                    redraw();
-                };
-                // WebUI 可以通过 /file= 路由访问本地文件
-                img.src = '/file=' + wm.data.path;
-            }
-
-            if (wm._img) {
+            if (cachedImg) {
+                // 用真实图片绘制，尺寸比例与 Python 一致
+                // Python: scale = size / 100, new_w = img.width * scale
+                // Canvas 上需要按显示比例缩放：canvas.width / 原图宽度
                 const scale = wm.size / 100;
-                const w = wm._img.width * scale * 0.4;
-                const h = wm._img.height * scale * 0.4;
-                ctx.drawImage(wm._img, -w / 2, -h / 2, w, h);
+                // 估算原图与 canvas 的比例 (使用 imgEl 的自然尺寸)
+                let displayRatio = 1;
+                if (state.imgEl && state.imgEl.naturalWidth > 0 && state.canvas) {
+                    displayRatio = state.canvas.width / state.imgEl.naturalWidth;
+                }
+                const drawW = cachedImg.width * scale * displayRatio;
+                const drawH = cachedImg.height * scale * displayRatio;
+                ctx.drawImage(cachedImg, -drawW / 2, -drawH / 2, drawW, drawH);
             } else {
-                // 图片未加载时用占位框
-                ctx.strokeStyle = '#00ff88';
+                // 图片未加载 -> 尝试加载并显示占位
+                if (path && !state.imgCache['_loading_' + path]) {
+                    state.imgCache['_loading_' + path] = true;
+                    preloadWatermarkImage(path);
+                }
+                const s = Math.max(20, wm.size * 0.5);
+                ctx.strokeStyle = 'rgba(0,255,136,0.8)';
                 ctx.lineWidth = 2;
                 ctx.setLineDash([6, 4]);
                 ctx.strokeRect(-s / 2, -s / 2, s, s);
                 ctx.setLineDash([]);
-                ctx.fillStyle = '#00ff88';
-                ctx.font = '12px Arial';
+                ctx.fillStyle = 'rgba(0,255,136,0.8)';
+                ctx.font = '11px Arial';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText('[图片]', 0, 0);
+                ctx.fillText('loading...', 0, 0);
             }
         }
 
         ctx.restore();
     }
 
-    // ============ 撤销 / 清除 (JS 端预览) ============
+    // ============ 全局接口 (被 Python _js 调用) ============
+
     window.watermarkUndo = function () {
         if (state.watermarks.length > 0) {
             state.watermarks.pop();
@@ -410,6 +461,12 @@
     window.watermarkClearAll = function () {
         state.watermarks = [];
         redraw();
+    };
+
+    window.watermarkRemoveCanvas = function () {
+        state.watermarks = [];
+        removeCanvas();
+        state.imgEl = null;
     };
 
     // ============ 获取上次生成的图片 ============
@@ -469,7 +526,6 @@
     if (typeof onUiLoaded === 'function') {
         onUiLoaded(init);
     } else if (typeof onUiUpdate === 'function') {
-        // onUiUpdate 会被多次调用，用标志防重入
         let started = false;
         onUiUpdate(() => {
             if (!started) {
