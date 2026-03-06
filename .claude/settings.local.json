@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(curl -sL \"https://raw.githubusercontent.com/Physton/sd-webui-prompt-all-in-one/main/scripts/on_app_started.py\")",
-      "Bash(curl -sL \"https://raw.githubusercontent.com/Physton/sd-webui-prompt-all-in-one/main/src/globals.js\")",
-      "Bash(curl -sL \"https://raw.githubusercontent.com/Physton/sd-webui-prompt-all-in-one/main/javascript/main.entry.js\")"
-    ]
-  }
-}
