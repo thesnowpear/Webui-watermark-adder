@@ -343,6 +343,14 @@ def on_ui_tabs():
 
                 save_status = gr.Textbox(label="保存状态", interactive=False, lines=2)
 
+                gr.Markdown("### 选项")
+                with gr.Row():
+                    auto_save_toggle = gr.Checkbox(label="自动保存到 outputs", value=False)
+                    browser_download_toggle = gr.Checkbox(label="浏览器下载", value=False)
+
+                # 隐藏的下载组件，用于触发浏览器下载
+                download_file = gr.File(visible=False, elem_id="watermark_download_file")
+
         # ===== 事件处理 =====
 
         selected_img_idx = gr.State(-1)
@@ -497,36 +505,52 @@ def on_ui_tabs():
         def clear_image():
             return None, None, [], "尚未添加水印"
 
-        def generate_watermarked(img, wm_list):
+        def generate_watermarked(img, wm_list, auto_save):
             if img is None:
                 return None, "请先上传或获取图片"
             if not wm_list:
                 return None, "请先添加水印（选择水印后点击编辑区图片）"
             manager.original_image = img.copy()
             result = manager.apply_watermark_to_image(img, wm_list)
-            return result, f"生成完成，共应用 {len(wm_list)} 个水印"
+            msg = f"生成完成，共应用 {len(wm_list)} 个水印"
+            if auto_save:
+                output_dir = _get_output_dir()
+                base_name = _make_base_name()
+                normal_path = output_dir / f"{base_name}.png"
+                result.save(normal_path)
+                extract_path = output_dir / f"extractable_{base_name}.png"
+                manager.create_extractable_image(result, manager.original_image, extract_path)
+                msg += f"\n已自动保存: {normal_path}\n已自动保存: {extract_path}"
+            return result, msg
 
-        def save_normal(img):
+        def _get_output_dir():
+            webui_root = Path(__file__).parent.parent.parent.parent
+            output_dir = webui_root / "outputs" / "watermarked"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            return output_dir
+
+        def _make_base_name():
+            return f"watermarked_{int(time.time())}"
+
+        def save_normal(img, browser_dl):
             if img is None:
-                return "没有可保存的图片，请先生成"
-            webui_root = Path(__file__).parent.parent.parent.parent
-            output_dir = webui_root / "outputs" / "watermarked"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            ts = int(time.time())
-            path = output_dir / f"watermarked_{ts}.png"
+                return "没有可保存的图片，请先生成", None
+            output_dir = _get_output_dir()
+            base_name = _make_base_name()
+            path = output_dir / f"{base_name}.png"
             img.save(path)
-            return f"已保存: {path}"
+            dl_file = str(path) if browser_dl else None
+            return f"已保存: {path}", dl_file
 
-        def save_extractable(img):
+        def save_extractable(img, browser_dl):
             if img is None or manager.original_image is None:
-                return "没有可保存的图片，请先生成"
-            webui_root = Path(__file__).parent.parent.parent.parent
-            output_dir = webui_root / "outputs" / "watermarked"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            ts = int(time.time())
-            path = output_dir / f"extractable_{ts}.png"
+                return "没有可保存的图片，请先生成", None
+            output_dir = _get_output_dir()
+            base_name = _make_base_name()
+            path = output_dir / f"extractable_{base_name}.png"
             manager.create_extractable_image(img, manager.original_image, path)
-            return f"可解压图片包已保存: {path}\n将 .png 改为 .zip 即可解压出原图"
+            dl_file = str(path) if browser_dl else None
+            return f"可解压图片包已保存: {path}\n将 .png 改为 .zip 即可解压出原图", dl_file
 
         def fetch_last_image():
             """从 outputs 文件夹获取最新生成的图片"""
@@ -676,12 +700,12 @@ def on_ui_tabs():
 
         generate_btn.click(
             fn=generate_watermarked,
-            inputs=[image_editor, watermark_list_state],
+            inputs=[image_editor, watermark_list_state, auto_save_toggle],
             outputs=[preview_image, save_status]
         )
 
-        save_btn.click(fn=save_normal, inputs=[preview_image], outputs=[save_status])
-        save_extract_btn.click(fn=save_extractable, inputs=[preview_image], outputs=[save_status])
+        save_btn.click(fn=save_normal, inputs=[preview_image, browser_download_toggle], outputs=[save_status, download_file])
+        save_extract_btn.click(fn=save_extractable, inputs=[preview_image, browser_download_toggle], outputs=[save_status, download_file])
 
         watermark_tab.load(fn=refresh_galleries, outputs=[img_wm_gallery, txt_wm_gallery])
 

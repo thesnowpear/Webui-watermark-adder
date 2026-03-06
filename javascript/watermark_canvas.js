@@ -188,6 +188,71 @@
         trySetupCanvas();
     }
 
+    // ============ 缩放滑杆 ============
+    var zoomSliderEl = null;
+
+    function createZoomSlider(container) {
+        removeZoomSlider();
+
+        // 找到溢出裁切的父元素（canvas 容器的 parentElement）
+        var clipParent = container.parentElement;
+        if (!clipParent) return;
+
+        var slider = document.createElement('input');
+        slider.type = 'range';
+        slider.id = 'watermark-zoom-slider';
+        slider.min = '10';
+        slider.max = '1000';
+        slider.step = '1';
+        slider.value = '100';
+        slider.title = '缩放';
+        slider.style.cssText =
+            'position:absolute;right:-28px;top:0;bottom:0;' +
+            'width:20px;height:100%;' +
+            'writing-mode:vertical-lr;direction:rtl;' +
+            'z-index:101;cursor:pointer;' +
+            'appearance:slider-vertical;-webkit-appearance:slider-vertical;' +
+            'margin:0;padding:0;opacity:0.7;';
+
+        slider.addEventListener('input', function () {
+            var newZoom = parseFloat(slider.value) / 100;
+            if (isNaN(newZoom) || newZoom <= 0) return;
+            // 以容器中心为缩放原点
+            var parent = state.canvas ? state.canvas.parentElement : null;
+            if (parent && parent.parentElement) {
+                var parentRect = parent.parentElement.getBoundingClientRect();
+                var cx = parentRect.width / 2;
+                var cy = parentRect.height / 2;
+                var ratio = newZoom / state.zoom;
+                state.panX = cx - (cx - state.panX) * ratio;
+                state.panY = cy - (cy - state.panY) * ratio;
+            }
+            state.zoom = newZoom;
+            applyZoomPan();
+            redraw();
+        });
+
+        // 需要一个包装定位层
+        clipParent.style.position = 'relative';
+        clipParent.appendChild(slider);
+        zoomSliderEl = slider;
+    }
+
+    function removeZoomSlider() {
+        if (zoomSliderEl) {
+            zoomSliderEl.remove();
+            zoomSliderEl = null;
+        }
+        var old = document.querySelector('#watermark-zoom-slider');
+        if (old) old.remove();
+    }
+
+    function syncZoomSlider() {
+        if (zoomSliderEl) {
+            zoomSliderEl.value = String(Math.round(state.zoom * 100));
+        }
+    }
+
     // ============ Canvas 创建/移除 ============
 
     // 获取 canvas 坐标（考虑 CSS transform 后的真实坐标）
@@ -209,6 +274,7 @@
         if (container.parentElement) {
             container.parentElement.style.overflow = 'hidden';
         }
+        syncZoomSlider();
     }
 
     // 重置缩放平移
@@ -269,6 +335,9 @@
         // 重置缩放平移
         resetZoomPan();
 
+        // 创建缩放滑杆
+        createZoomSlider(container);
+
         canvas.addEventListener('mousemove', onMouseMove);
         canvas.addEventListener('mouseleave', onMouseLeave);
         canvas.addEventListener('mouseenter', () => { state.isHovering = true; });
@@ -290,6 +359,7 @@
     }
 
     function removeCanvas() {
+        removeZoomSlider();
         const old = document.querySelector('#watermark-overlay-canvas');
         if (old) {
             // 清除容器上的 transform
@@ -476,9 +546,27 @@
         console.log('[Watermark] Click at', xRatio.toFixed(3), yRatio.toFixed(3));
     }
 
+    // 追踪真实的 Ctrl 按键状态（区分物理按键与触控板缩放手势）
+    var realCtrlPressed = false;
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Control') realCtrlPressed = true;
+    });
+    document.addEventListener('keyup', function (e) {
+        if (e.key === 'Control') realCtrlPressed = false;
+    });
+    window.addEventListener('blur', function () { realCtrlPressed = false; });
+
     function onWheel(e) {
         e.preventDefault();
-        if (e.ctrlKey) {
+        e.stopPropagation();
+
+        // 判断是否真正按下了 Ctrl（排除触控板缩放手势产生的 ctrlKey=true）
+        // 方法1: keydown/keyup 追踪
+        // 方法2: 触控板缩放手势的 deltaY 通常很小（< 50），鼠标滚轮通常 ±100/±120
+        var isPinchGesture = e.ctrlKey && (!realCtrlPressed || Math.abs(e.deltaY) < 50);
+        var isRealCtrl = e.ctrlKey && !isPinchGesture;
+
+        if (isRealCtrl) {
             // Ctrl+滚轮：调整大小(px)
             const delta = e.deltaY > 0 ? -10 : 10;
             state.size = Math.max(1, Math.min(2000, state.size + delta));
@@ -494,7 +582,7 @@
             state.opacity = Math.max(0.05, Math.min(1.0, +(state.opacity + delta).toFixed(2)));
             updateSlider('#watermark_opacity', state.opacity);
         } else {
-            // 普通滚轮：缩放图片（围绕鼠标位置）
+            // 普通滚轮（包括触控板缩放手势）：缩放图片（围绕鼠标位置）
             var oldZoom = state.zoom;
             var factor = e.deltaY > 0 ? 0.9 : 1.1;
             var newZoom = Math.max(0.1, Math.min(10, oldZoom * factor));
