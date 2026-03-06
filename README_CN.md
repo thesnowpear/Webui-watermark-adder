@@ -34,7 +34,8 @@
   - 一个文件包含两个版本
 
 ### 其他功能
-- **获取上次生成的图片**：自动扫描 `outputs/` 文件夹，按修改时间获取最新图片
+- **自动保存**：生成水印图片时默认自动保存到 `outputs/watermarked/`
+- **获取上次生成的图片**：自动扫描 `outputs/` 文件夹，按修改时间获取最新图片（排除 `outputs/watermarked/` 水印输出目录）
 - **取消选择**：一键取消当前选中的水印
 - **水印库管理**：刷新、删除图片/文字水印
 
@@ -63,7 +64,7 @@ git clone https://github.com/yourusername/sd-webui-watermark-adder.git
 
 ### 1. 上传图片
 - 在编辑区上传图片
-- 或点击"获取上次生成的图片"从 `outputs/` 文件夹加载最新图片
+- 或点击"获取上次生成的图片"从 `outputs/` 文件夹加载最新图片（排除水印输出目录）
 
 ### 2. 创建水印
 
@@ -86,7 +87,7 @@ git clone https://github.com/yourusername/sd-webui-watermark-adder.git
 5. 可以重复添加多个水印
 
 ### 4. 生成和保存
-1. 点击"生成水印图片"
+1. 点击"生成水印图片"（默认自动保存到 `outputs/watermarked/`）
 2. 在右侧预览效果
 3. 选择保存方式：
    - **保存图片**：普通 PNG

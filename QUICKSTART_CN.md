@@ -38,7 +38,7 @@ git clone <repository-url> sd-webui-watermark-adder
 ### 步骤 1：上传图片
 
 - 在编辑区拖放或点击上传图片
-- 或点击 **获取上次生成的图片**（自动扫描 `outputs/` 文件夹获取最新图片）
+- 或点击 **获取上次生成的图片**（自动扫描 `outputs/` 文件夹获取最新图片，排除水印输出目录）
 
 ### 步骤 2：创建或选择水印
 
@@ -73,7 +73,7 @@ git clone <repository-url> sd-webui-watermark-adder
 
 ### 步骤 5：生成和保存
 
-1. 点击 **生成水印图片**
+1. 点击 **生成水印图片**（默认自动保存到 `outputs/watermarked/`）
 2. 在右侧预览效果
 3. 选择保存方式：
    - **保存图片**：保存为标准 PNG

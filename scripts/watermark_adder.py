@@ -110,6 +110,13 @@ class WatermarkManager:
             rotation = wm.get('rotation', 0)
             opacity = wm.get('opacity', 0.7)
 
+            # 如果 JS 传来了原图尺寸，按比例缩放 size
+            # （处理 Gradio 可能对图片缩放的情况）
+            js_img_w = wm.get('img_width', 0)
+            if js_img_w > 0 and js_img_w != result.width:
+                scale_factor = result.width / js_img_w
+                size = size * scale_factor
+
             x = int(x_ratio * result.width)
             y = int(y_ratio * result.height)
 
@@ -136,7 +143,10 @@ class WatermarkManager:
                     txt_layer = txt_layer.rotate(-rotation, expand=True, resample=Image.BILINEAR)
                 paste_x = x - txt_layer.width // 2
                 paste_y = y - txt_layer.height // 2
-                result.paste(txt_layer, (paste_x, paste_y), txt_layer)
+                # 使用全尺寸图层合成，超出边界的部分自动裁剪
+                full_layer = Image.new('RGBA', result.size, (0, 0, 0, 0))
+                full_layer.paste(txt_layer, (paste_x, paste_y))
+                result = Image.alpha_composite(result, full_layer)
 
             elif wm_type == 'image':
                 img_path = wm.get('path', '')
@@ -157,7 +167,10 @@ class WatermarkManager:
                     wm_img = wm_img.rotate(-rotation, expand=True, resample=Image.BILINEAR)
                 paste_x = x - wm_img.width // 2
                 paste_y = y - wm_img.height // 2
-                result.paste(wm_img, (paste_x, paste_y), wm_img)
+                # 使用全尺寸图层合成，超出边界的部分自动裁剪
+                full_layer = Image.new('RGBA', result.size, (0, 0, 0, 0))
+                full_layer.paste(wm_img, (paste_x, paste_y))
+                result = Image.alpha_composite(result, full_layer)
 
         return result.convert('RGB')
 
@@ -345,7 +358,7 @@ def on_ui_tabs():
 
                 gr.Markdown("### 选项")
                 with gr.Row():
-                    auto_save_toggle = gr.Checkbox(label="自动保存到 outputs", value=False)
+                    auto_save_toggle = gr.Checkbox(label="自动保存到 outputs", value=True)
                     browser_download_toggle = gr.Checkbox(label="浏览器下载", value=False)
 
                 # 隐藏的下载组件，用于触发浏览器下载
@@ -468,6 +481,8 @@ def on_ui_tabs():
                 'size': size,
                 'rotation': rotation,
                 'opacity': opacity,
+                'img_width': coords.get('imgWidth', 0),
+                'img_height': coords.get('imgHeight', 0),
             }
 
             if wm_type == 'text':
@@ -567,12 +582,21 @@ def on_ui_tabs():
             latest_file = None
             latest_mtime = 0
 
+            # 水印输出文件夹，搜索时排除
+            watermarked_dir = webui_root / "outputs" / "watermarked"
+
             for search_dir in search_dirs:
                 if not search_dir.exists():
                     continue
                 # 递归搜索所有图片文件
                 for ext in ['*.png', '*.jpg', '*.jpeg', '*.webp']:
                     for f in search_dir.rglob(ext):
+                        # 排除水印输出文件夹
+                        try:
+                            f.relative_to(watermarked_dir)
+                            continue  # 在水印文件夹内，跳过
+                        except ValueError:
+                            pass  # 不在水印文件夹内，继续处理
                         try:
                             mtime = f.stat().st_mtime
                             if mtime > latest_mtime:

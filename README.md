@@ -22,7 +22,8 @@ A watermark extension for Stable Diffusion WebUI Forge with visual editing, real
 - **Dual Save Modes**:
   - Normal save: Standard PNG with watermarks
   - Extractable pack: PNG file that can be renamed to `.zip` to extract the original unwatermarked image
-- **Fetch Last Image**: Automatically scan `outputs/` folder for the latest generated image
+- **Auto Save**: Auto-save to `outputs/watermarked/` is enabled by default when generating
+- **Fetch Last Image**: Automatically scan `outputs/` folder for the latest generated image (excludes `outputs/watermarked/`)
 
 ## Installation
 
@@ -40,7 +41,7 @@ A watermark extension for Stable Diffusion WebUI Forge with visual editing, real
 3. Create or select a watermark from the library (left panel)
 4. Move mouse over the editor — watermark follows the cursor
 5. Click to place a watermark; drag to pan, scroll to zoom
-6. Click **Generate** to render the final image
+6. Click **Generate** to render the final image (auto-saved to `outputs/watermarked/` by default)
 7. Save as normal PNG or extractable pack
 
 ## Tech Stack

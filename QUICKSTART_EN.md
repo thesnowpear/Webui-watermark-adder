@@ -38,7 +38,7 @@ The interface is divided into three panels:
 ### Step 1: Upload an Image
 
 - Drag and drop or click to upload an image in the editor
-- Or click **Fetch Last Image** (automatically scans the `outputs/` folder for the latest image)
+- Or click **Fetch Last Image** (automatically scans the `outputs/` folder for the latest image, excluding the watermarked output directory)
 
 ### Step 2: Create or Select a Watermark
 
@@ -73,7 +73,7 @@ In the editor:
 
 ### Step 5: Generate and Save
 
-1. Click **Generate Watermarked Image**
+1. Click **Generate Watermarked Image** (auto-saved to `outputs/watermarked/` by default)
 2. Preview the result on the right
 3. Choose a save method:
    - **Save Image**: Save as a standard PNG

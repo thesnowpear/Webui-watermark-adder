@@ -194,9 +194,23 @@
     function createZoomSlider(container) {
         removeZoomSlider();
 
-        // 找到溢出裁切的父元素（canvas 容器的 parentElement）
+        // 放在 #watermark_editor 上，避免被 overflow:hidden 裁切
+        var editorEl = state.editorEl;
+        if (!editorEl) return;
+
+        // 找到图片展示区域（overflow:hidden 的那一层）作为定位参考
         var clipParent = container.parentElement;
-        if (!clipParent) return;
+
+        var wrapper = document.createElement('div');
+        wrapper.id = 'watermark-zoom-slider-wrap';
+        wrapper.style.cssText =
+            'position:relative;display:flex;align-items:stretch;';
+
+        // 把 clipParent 移入 wrapper，slider 放在旁边
+        if (clipParent && clipParent.parentElement) {
+            clipParent.parentElement.insertBefore(wrapper, clipParent);
+            wrapper.appendChild(clipParent);
+        }
 
         var slider = document.createElement('input');
         slider.type = 'range';
@@ -205,14 +219,13 @@
         slider.max = '1000';
         slider.step = '1';
         slider.value = '100';
-        slider.title = '缩放';
+        slider.title = '缩放 (10% - 1000%)';
         slider.style.cssText =
-            'position:absolute;right:-28px;top:0;bottom:0;' +
-            'width:20px;height:100%;' +
+            'width:24px;min-height:100px;flex-shrink:0;' +
             'writing-mode:vertical-lr;direction:rtl;' +
-            'z-index:101;cursor:pointer;' +
+            'cursor:pointer;' +
             'appearance:slider-vertical;-webkit-appearance:slider-vertical;' +
-            'margin:0;padding:0;opacity:0.7;';
+            'margin:0 0 0 4px;padding:0;opacity:0.75;';
 
         slider.addEventListener('input', function () {
             var newZoom = parseFloat(slider.value) / 100;
@@ -232,9 +245,7 @@
             redraw();
         });
 
-        // 需要一个包装定位层
-        clipParent.style.position = 'relative';
-        clipParent.appendChild(slider);
+        wrapper.appendChild(slider);
         zoomSliderEl = slider;
     }
 
@@ -242,6 +253,15 @@
         if (zoomSliderEl) {
             zoomSliderEl.remove();
             zoomSliderEl = null;
+        }
+        // 还原 DOM：把 clipParent 从 wrapper 中移出
+        var wrapper = document.querySelector('#watermark-zoom-slider-wrap');
+        if (wrapper) {
+            var child = wrapper.firstElementChild;
+            if (child && wrapper.parentElement) {
+                wrapper.parentElement.insertBefore(child, wrapper);
+            }
+            wrapper.remove();
         }
         var old = document.querySelector('#watermark-zoom-slider');
         if (old) old.remove();
@@ -254,6 +274,54 @@
     }
 
     // ============ Canvas 创建/移除 ============
+
+    // 计算 img 元素内实际渲染的图片区域（处理 object-fit: contain 的 letterbox）
+    function getRenderedImageRect(imgEl) {
+        var elemRect = imgEl.getBoundingClientRect();
+        var natW = imgEl.naturalWidth;
+        var natH = imgEl.naturalHeight;
+        if (!natW || !natH) return { left: elemRect.left, top: elemRect.top, width: elemRect.width, height: elemRect.height, offsetX: 0, offsetY: 0 };
+
+        // 检查是否真的使用了 object-fit: contain/cover
+        var objectFit = window.getComputedStyle(imgEl).objectFit;
+        if (objectFit !== 'contain' && objectFit !== 'cover') {
+            // 没有 object-fit 缩放，元素尺寸就是图片渲染尺寸
+            return { left: elemRect.left, top: elemRect.top, width: elemRect.width, height: elemRect.height, offsetX: 0, offsetY: 0 };
+        }
+
+        var elemRatio = elemRect.width / elemRect.height;
+        var imgRatio = natW / natH;
+
+        // 如果元素尺寸已经匹配图片宽高比（误差<2%），无需校正
+        if (Math.abs(elemRatio - imgRatio) / imgRatio < 0.02) {
+            return { left: elemRect.left, top: elemRect.top, width: elemRect.width, height: elemRect.height, offsetX: 0, offsetY: 0 };
+        }
+
+        var renderW, renderH, offsetX, offsetY;
+
+        if (imgRatio > elemRatio) {
+            // 图片更宽 → 宽度撑满，高度有上下留白
+            renderW = elemRect.width;
+            renderH = elemRect.width / imgRatio;
+            offsetX = 0;
+            offsetY = (elemRect.height - renderH) / 2;
+        } else {
+            // 图片更高 → 高度撑满，宽度有左右留白
+            renderH = elemRect.height;
+            renderW = elemRect.height * imgRatio;
+            offsetX = (elemRect.width - renderW) / 2;
+            offsetY = 0;
+        }
+
+        return {
+            left: elemRect.left + offsetX,
+            top: elemRect.top + offsetY,
+            width: renderW,
+            height: renderH,
+            offsetX: offsetX,
+            offsetY: offsetY,
+        };
+    }
 
     // 获取 canvas 坐标（考虑 CSS transform 后的真实坐标）
     function getCanvasCoords(e) {
@@ -305,21 +373,22 @@
         canvas.id = 'watermark-overlay-canvas';
 
         const containerRect = container.getBoundingClientRect();
-        const imgRect = imgEl.getBoundingClientRect();
+        // 使用实际渲染的图片区域（排除 object-fit letterbox）
+        const imgRender = getRenderedImageRect(imgEl);
 
-        const offsetTop = imgRect.top - containerRect.top;
-        const offsetLeft = imgRect.left - containerRect.left;
+        const offsetTop = imgRender.top - containerRect.top;
+        const offsetLeft = imgRender.left - containerRect.left;
 
         canvas.style.cssText =
             'position:absolute;' +
             'top:' + offsetTop + 'px;' +
             'left:' + offsetLeft + 'px;' +
-            'width:' + imgRect.width + 'px;' +
-            'height:' + imgRect.height + 'px;' +
+            'width:' + imgRender.width + 'px;' +
+            'height:' + imgRender.height + 'px;' +
             'z-index:100;pointer-events:auto;cursor:crosshair;';
 
-        canvas.width = Math.round(imgRect.width);
-        canvas.height = Math.round(imgRect.height);
+        canvas.width = Math.round(imgRender.width);
+        canvas.height = Math.round(imgRender.height);
 
         const containerStyle = window.getComputedStyle(container);
         if (containerStyle.position === 'static') {
@@ -393,17 +462,17 @@
         container.style.transform = '';
 
         const containerRect = container.getBoundingClientRect();
-        const imgRect = state.imgEl.getBoundingClientRect();
+        const imgRender = getRenderedImageRect(state.imgEl);
 
         // 恢复 transform
         container.style.transform = savedTransform;
 
-        if (imgRect.width === 0 || imgRect.height === 0) return;
+        if (imgRender.width === 0 || imgRender.height === 0) return;
 
-        const offsetTop = imgRect.top - containerRect.top;
-        const offsetLeft = imgRect.left - containerRect.left;
-        const w = Math.round(imgRect.width);
-        const h = Math.round(imgRect.height);
+        const offsetTop = imgRender.top - containerRect.top;
+        const offsetLeft = imgRender.left - containerRect.left;
+        const w = Math.round(imgRender.width);
+        const h = Math.round(imgRender.height);
 
         // 只在尺寸变化时更新
         if (state.canvas.width === w && state.canvas.height === h) return;
@@ -532,10 +601,17 @@
 
         redraw();
 
-        // 发送坐标到 Python
+        // 发送坐标到 Python（包含原图尺寸，供 Python 按比例缩放）
         const coordsEl = document.querySelector('#watermark_click_coords textarea');
         if (coordsEl) {
-            const value = JSON.stringify({ x: xRatio, y: yRatio, ts: Date.now() });
+            const payload = {
+                x: xRatio,
+                y: yRatio,
+                ts: Date.now(),
+                imgWidth: state.imgEl ? state.imgEl.naturalWidth : 0,
+                imgHeight: state.imgEl ? state.imgEl.naturalHeight : 0,
+            };
+            const value = JSON.stringify(payload);
             const nativeSetter = Object.getOwnPropertyDescriptor(
                 window.HTMLTextAreaElement.prototype, 'value'
             ).set;
@@ -660,7 +736,7 @@
                 displayRatio = state.canvas.width / state.imgEl.naturalWidth;
             }
             const fontSize = Math.max(1, wm.size * displayRatio);
-            ctx.font = 'bold ' + fontSize + 'px Arial, sans-serif';
+            ctx.font = fontSize + 'px Arial, sans-serif';
             ctx.fillStyle = wm.data.color || '#FFFFFF';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
