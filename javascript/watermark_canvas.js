@@ -282,10 +282,12 @@
         var natH = imgEl.naturalHeight;
         if (!natW || !natH) return { left: elemRect.left, top: elemRect.top, width: elemRect.width, height: elemRect.height, offsetX: 0, offsetY: 0 };
 
-        // 检查是否真的使用了 object-fit: contain/cover
+        // 检查 object-fit 属性
         var objectFit = window.getComputedStyle(imgEl).objectFit;
-        if (objectFit !== 'contain' && objectFit !== 'cover') {
-            // 没有 object-fit 缩放，元素尺寸就是图片渲染尺寸
+        // 只有 contain 才有 letterbox 留白需要校正
+        // cover: 图片填满元素（溢出裁切），canvas 直接匹配元素尺寸
+        // fill/none/其他: 元素尺寸即渲染尺寸
+        if (objectFit !== 'contain') {
             return { left: elemRect.left, top: elemRect.top, width: elemRect.width, height: elemRect.height, offsetX: 0, offsetY: 0 };
         }
 
