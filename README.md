@@ -1,46 +1,55 @@
-# WebUI-Forge 水印添加扩展
+# WebUI-Forge Watermark Adder Extension
 
-这是一个用于 Stable Diffusion WebUI Forge 的扩展程序，提供强大的图片水印添加功能。
+[中文文档](README_CN.md)
 
-## 功能特性
+A watermark extension for Stable Diffusion WebUI Forge with visual editing, real-time preview, and extractable image pack support.
 
-- 📝 **文字水印**：创建和保存自定义文字水印
-- 🖼️ **图片水印**：上传和管理图片水印
-- 🎨 **可视化编辑**：通过鼠标交互直观地添加水印
-- 🔄 **实时预览**：即时查看水印效果
-- 💾 **双重保存**：
-  - 普通保存：带水印的图片
-  - 可解压图片包：外观是图片，改后缀名为 .zip 可解压出原图
-- ⚙️ **灵活调整**：
-  - 鼠标滚轮调整水印大小
-  - Ctrl + 滚轮调整水印方向
-  - 撤销功能支持
+## Features
 
-## 安装方法
+- **Text Watermarks**: Create and save custom text watermarks with color, size, opacity controls
+- **Image Watermarks**: Upload and manage image watermarks (supports PNG transparent background)
+- **Visual Editing**: Canvas overlay with mouse-follow preview, click to place
+- **Zoom & Pan**: Scroll to zoom, drag to pan the editing view, double-click to reset
+- **Pixel-based Sizing**: Watermark size in pixels (1–2000px, shortest edge)
+- **Shortcut Controls**:
+  - Scroll wheel: Zoom image
+  - Left-drag: Pan image
+  - Double-click: Reset view
+  - Ctrl + Scroll: Adjust watermark size (±10px)
+  - Shift + Scroll: Adjust rotation angle
+  - Alt + Scroll: Adjust opacity
+- **Undo / Clear**: Undo last watermark or clear all
+- **Dual Save Modes**:
+  - Normal save: Standard PNG with watermarks
+  - Extractable pack: PNG file that can be renamed to `.zip` to extract the original unwatermarked image
+- **Fetch Last Image**: Automatically scan `outputs/` folder for the latest generated image
 
-1. 进入 WebUI Forge 的 `extensions` 目录
-2. 克隆此仓库：
+## Installation
+
+1. Navigate to your WebUI Forge `extensions` directory
+2. Clone this repository:
    ```bash
    git clone https://github.com/yourusername/sd-webui-watermark-adder.git
    ```
-3. 重启 WebUI Forge
+3. Restart WebUI Forge
 
-## 使用方法
+## Usage
 
-1. 在 WebUI 中找到 "Watermark Adder" 标签页
-2. 上传或从其他标签页发送图片到编辑区
-3. 在水印选择区创建或选择水印
-4. 鼠标移动到编辑区，水印会跟随鼠标
-5. 点击左键添加水印到图片上
-6. 点击"生成"按钮生成最终图片
+1. Open the **Watermark Adder** tab (top-level, same level as txt2img/img2img)
+2. Upload an image to the editor, or click "Fetch Last Image" to load from `outputs/`
+3. Create or select a watermark from the library (left panel)
+4. Move mouse over the editor — watermark follows the cursor
+5. Click to place a watermark; drag to pan, scroll to zoom
+6. Click **Generate** to render the final image
+7. Save as normal PNG or extractable pack
 
-## 技术栈
+## Tech Stack
 
-- Python 3.x
-- Gradio
+- Python 3.x + Gradio
 - Pillow (PIL)
-- HTML5 Canvas
+- JavaScript + HTML5 Canvas
+- Polyglot file (PNG + ZIP)
 
-## 许可证
+## License
 
 MIT License

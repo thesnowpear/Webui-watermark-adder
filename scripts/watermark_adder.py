@@ -275,7 +275,7 @@ def on_ui_tabs():
             with gr.Column(scale=2, min_width=400):
                 gr.Markdown("### 编辑区")
                 gr.Markdown(
-                    "Ctrl+滚轮: 调整大小 | Shift+滚轮: 调整角度 | Alt+滚轮: 调整透明度",
+                    "滚轮: 缩放图片 | 长按拖拽: 移动图片 | 双击: 重置视图 | Ctrl+滚轮: 调整大小 | Shift+滚轮: 调整角度 | Alt+滚轮: 调整透明度",
                     elem_classes=["watermark-shortcuts-hint"]
                 )
 
@@ -333,6 +333,10 @@ def on_ui_tabs():
                 )
 
                 gr.Markdown("### 保存")
+                gr.Markdown(
+                    "**可解压包说明**: 保存为「可解压包」后，将文件后缀 `.png` 改为 `.zip` 即可解压出无水印原图。",
+                    elem_classes=["extractable-hint"]
+                )
                 with gr.Row():
                     save_btn = gr.Button("保存图片", variant="primary")
                     save_extract_btn = gr.Button("保存可解压包", variant="secondary")

@@ -22,6 +22,17 @@
         canvasReady: false,
         // 图片水印缓存: path -> Image
         imgCache: {},
+        // 缩放与平移
+        zoom: 1,
+        panX: 0,
+        panY: 0,
+        // 拖拽状态
+        isDragging: false,
+        hasDragged: false,
+        dragStartX: 0,
+        dragStartY: 0,
+        dragStartPanX: 0,
+        dragStartPanY: 0,
     };
 
     // ============ 初始化 ============
@@ -178,6 +189,40 @@
     }
 
     // ============ Canvas 创建/移除 ============
+
+    // 获取 canvas 坐标（考虑 CSS transform 后的真实坐标）
+    function getCanvasCoords(e) {
+        var rect = state.canvas.getBoundingClientRect();
+        // getBoundingClientRect 已包含 CSS transform，直接映射到 canvas 像素
+        var canvasX = (e.clientX - rect.left) * state.canvas.width / rect.width;
+        var canvasY = (e.clientY - rect.top) * state.canvas.height / rect.height;
+        return { x: canvasX, y: canvasY };
+    }
+
+    // 应用缩放平移 CSS transform
+    function applyZoomPan() {
+        var container = state.canvas ? state.canvas.parentElement : null;
+        if (!container) return;
+        container.style.transformOrigin = '0 0';
+        container.style.transform = 'translate(' + state.panX + 'px,' + state.panY + 'px) scale(' + state.zoom + ')';
+        // 父元素裁切溢出
+        if (container.parentElement) {
+            container.parentElement.style.overflow = 'hidden';
+        }
+    }
+
+    // 重置缩放平移
+    function resetZoomPan() {
+        state.zoom = 1;
+        state.panX = 0;
+        state.panY = 0;
+        var container = state.canvas ? state.canvas.parentElement : null;
+        if (container) {
+            container.style.transform = '';
+            container.style.transformOrigin = '';
+        }
+    }
+
     function setupCanvas() {
         const imgEl = state.imgEl;
         if (!imgEl) return;
@@ -221,11 +266,18 @@
         state.ctx = canvas.getContext('2d');
         state.canvasReady = true;
 
+        // 重置缩放平移
+        resetZoomPan();
+
         canvas.addEventListener('mousemove', onMouseMove);
         canvas.addEventListener('mouseleave', onMouseLeave);
         canvas.addEventListener('mouseenter', () => { state.isHovering = true; });
-        canvas.addEventListener('click', onClick);
+        canvas.addEventListener('mousedown', onMouseDown);
+        canvas.addEventListener('mouseup', onMouseUp);
+        canvas.addEventListener('dblclick', onDblClick);
         canvas.addEventListener('wheel', onWheel, { passive: false });
+        // 阻止右键菜单
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
         if (state._resizeObserver) {
             state._resizeObserver.disconnect();
@@ -239,7 +291,15 @@
 
     function removeCanvas() {
         const old = document.querySelector('#watermark-overlay-canvas');
-        if (old) old.remove();
+        if (old) {
+            // 清除容器上的 transform
+            var container = old.parentElement;
+            if (container) {
+                container.style.transform = '';
+                container.style.transformOrigin = '';
+            }
+            old.remove();
+        }
         if (state._resizeObserver) {
             state._resizeObserver.disconnect();
             state._resizeObserver = null;
@@ -247,6 +307,9 @@
         state.canvas = null;
         state.ctx = null;
         state.canvasReady = false;
+        state.zoom = 1;
+        state.panX = 0;
+        state.panY = 0;
     }
 
     function syncCanvasSize() {
@@ -255,8 +318,15 @@
         const container = state.canvas.parentElement;
         if (!container) return;
 
+        // 临时移除 transform 以获取真实尺寸
+        var savedTransform = container.style.transform;
+        container.style.transform = '';
+
         const containerRect = container.getBoundingClientRect();
         const imgRect = state.imgEl.getBoundingClientRect();
+
+        // 恢复 transform
+        container.style.transform = savedTransform;
 
         if (imgRect.width === 0 || imgRect.height === 0) return;
 
@@ -304,28 +374,78 @@
     // ============ 鼠标事件 ============
     function onMouseMove(e) {
         state.isHovering = true;
-        const rect = state.canvas.getBoundingClientRect();
-        state.mouseX = e.clientX - rect.left;
-        state.mouseY = e.clientY - rect.top;
+
+        if (state.isDragging) {
+            // 拖拽平移
+            var dx = e.clientX - state.dragStartX;
+            var dy = e.clientY - state.dragStartY;
+            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+                state.hasDragged = true;
+            }
+            state.panX = state.dragStartPanX + dx;
+            state.panY = state.dragStartPanY + dy;
+            applyZoomPan();
+            state.canvas.style.cursor = 'grabbing';
+        } else {
+            state.canvas.style.cursor = 'crosshair';
+        }
+
+        // 更新鼠标坐标（canvas 空间）
+        var coords = getCanvasCoords(e);
+        state.mouseX = coords.x;
+        state.mouseY = coords.y;
         redraw();
     }
 
     function onMouseLeave() {
         state.isHovering = false;
+        if (state.isDragging) {
+            state.isDragging = false;
+            state.hasDragged = false;
+        }
         redraw();
     }
 
-    function onClick(e) {
+    function onMouseDown(e) {
+        if (e.button !== 0) return; // 仅左键
+        state.isDragging = true;
+        state.hasDragged = false;
+        state.dragStartX = e.clientX;
+        state.dragStartY = e.clientY;
+        state.dragStartPanX = state.panX;
+        state.dragStartPanY = state.panY;
+        e.preventDefault();
+    }
+
+    function onMouseUp(e) {
+        if (e.button !== 0) return;
+        if (state.isDragging && !state.hasDragged) {
+            // 没有拖动 → 视为点击，添加水印
+            doClick(e);
+        }
+        state.isDragging = false;
+        state.hasDragged = false;
+        state.canvas.style.cursor = 'crosshair';
+    }
+
+    function onDblClick(e) {
+        // 双击重置缩放平移
+        e.preventDefault();
+        resetZoomPan();
+        applyZoomPan();
+    }
+
+    function doClick(e) {
         if (!state.selectedType) {
             console.log('[Watermark] No watermark selected');
             return;
         }
 
-        const rect = state.canvas.getBoundingClientRect();
-        const cx = e.clientX - rect.left;
-        const cy = e.clientY - rect.top;
-        const xRatio = cx / rect.width;
-        const yRatio = cy / rect.height;
+        var coords = getCanvasCoords(e);
+        var cx = coords.x;
+        var cy = coords.y;
+        var xRatio = cx / state.canvas.width;
+        var yRatio = cy / state.canvas.height;
 
         // 添加到前端预览列表
         state.watermarks.push({
@@ -360,7 +480,7 @@
         e.preventDefault();
         if (e.ctrlKey) {
             // Ctrl+滚轮：调整大小(px)
-            const delta = e.deltaY > 0 ? -5 : 5;
+            const delta = e.deltaY > 0 ? -10 : 10;
             state.size = Math.max(1, Math.min(2000, state.size + delta));
             updateSlider('#watermark_size', state.size);
         } else if (e.shiftKey) {
@@ -373,6 +493,26 @@
             const delta = e.deltaY > 0 ? -0.05 : 0.05;
             state.opacity = Math.max(0.05, Math.min(1.0, +(state.opacity + delta).toFixed(2)));
             updateSlider('#watermark_opacity', state.opacity);
+        } else {
+            // 普通滚轮：缩放图片（围绕鼠标位置）
+            var oldZoom = state.zoom;
+            var factor = e.deltaY > 0 ? 0.9 : 1.1;
+            var newZoom = Math.max(0.1, Math.min(10, oldZoom * factor));
+
+            // 计算鼠标相对于容器原始位置的坐标
+            var container = state.canvas.parentElement;
+            if (container) {
+                var parentRect = container.parentElement.getBoundingClientRect();
+                var mouseRelX = e.clientX - parentRect.left;
+                var mouseRelY = e.clientY - parentRect.top;
+                // 调整 pan 使鼠标指向的点保持不变
+                var ratio = newZoom / oldZoom;
+                state.panX = mouseRelX - (mouseRelX - state.panX) * ratio;
+                state.panY = mouseRelY - (mouseRelY - state.panY) * ratio;
+            }
+
+            state.zoom = newZoom;
+            applyZoomPan();
         }
         redraw();
     }
