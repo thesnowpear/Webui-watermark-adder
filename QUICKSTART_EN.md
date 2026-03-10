@@ -1,4 +1,4 @@
-# Quick Start Guide
+﻿# Quick Start Guide
 
 ## Installation
 
@@ -30,22 +30,22 @@ The interface is divided into three panels:
 
 | Left: Watermark Library | Center: Editor | Right: Preview & Save |
 |:---|:---|:---|
-| Image/text watermark management | Image editing, watermark placement | Generate preview, save image |
-| Upload, delete, select | Zoom, pan, keyboard shortcuts | Normal save / Extractable pack |
+| Image/text/shape watermark management | Image editing and watermark placement | Generate preview and save image |
+| Upload, delete, select | Zoom, pan, shortcuts | Normal save / Extractable pack |
 
 ## Tutorial
 
 ### Step 1: Upload an Image
 
 - Drag and drop or click to upload an image in the editor
-- Or click **Fetch Last Image** (automatically scans the `outputs/` folder for the latest image, excluding the watermarked output directory)
+- Or click **Fetch Last Image** (automatically scans `outputs/` for the latest image, excluding the watermarked output directory)
 
 ### Step 2: Create or Select a Watermark
 
 **Create a text watermark:**
 1. Switch to the "Text Watermark" tab
-2. Enter the watermark text (e.g., "© 2024")
-3. Adjust the font size and color
+2. Enter the watermark text
+3. Adjust font size and color
 4. Enter a watermark name and click "Save"
 
 **Upload an image watermark:**
@@ -53,25 +53,34 @@ The interface is divided into three panels:
 2. Drag and drop or click to upload a watermark image (PNG with transparent background recommended)
 3. The watermark is automatically saved to the library after upload
 
-### Step 3: Add a Watermark to the Image
+**Create a shape watermark:**
+1. Switch to the "Shape Watermark" tab
+2. Choose the shape and effect mode: `color`, `blur`, or `mosaic`
+3. Adjust feather and mode controls
 
-1. Click to select a watermark from the library
-2. Move your mouse over the editor — the watermark follows the cursor with a live preview
-3. Use shortcuts to adjust:
-   - **Ctrl + Scroll**: Adjust size (±20px)
-   - **Shift + Scroll**: Adjust rotation angle
-   - **Alt + Scroll**: Adjust opacity
-4. **Left-click** to place the watermark
+### Step 3: Add Watermarks to the Image
+
+1. Click a watermark in the library to select it
+2. Move your mouse over the editor to preview
+3. For text/image watermarks: **left-click** to place
+4. For shape watermarks: **left-drag** to draw
 5. Repeat to add multiple watermarks
 
-### Step 4: Browse the Image
+### Step 4: Edit Existing Watermarks
 
-In the editor:
+1. Click an existing watermark on the canvas to select it
+2. Drag the watermark to move it
+3. Drag the corner/edge handles to resize it
+4. Hold **Shift** while resizing to toggle aspect ratio lock
+
+### Step 5: Browse the Image
+
 - **Scroll wheel**: Zoom image
-- **Left-click and drag**: Pan image
+- **Left-drag**: Pan image
+- **Space + Left-drag**: Pan image
 - **Double-click**: Reset zoom and pan
 
-### Step 5: Generate and Save
+### Step 6: Generate and Save
 
 1. Click **Generate Watermarked Image** (auto-saved to `outputs/watermarked/` by default)
 2. Preview the result on the right
@@ -103,7 +112,8 @@ unzip extractable_1234567890.zip
 | Action | Shortcut |
 |:---|:---|
 | Zoom image | Scroll wheel |
-| Pan image | Left-click and drag |
+| Pan image | Left-drag |
+| Pan image | Space + Left-drag |
 | Reset view | Double-click |
 | Adjust watermark size | Ctrl + Scroll (±20px) |
 | Adjust rotation angle | Shift + Scroll |
@@ -121,12 +131,16 @@ The extension will automatically retry and wait for the image to finish decoding
 ### Q: Where are saved images stored?
 Images are saved by default to `outputs/watermarked/` under the WebUI root directory.
 
-### Q: The extractable image pack won't open?
-Make sure the file extension has been changed to `.zip` and use an archive tool that supports the ZIP format (WinRAR, 7-Zip, unzip, etc.).
-
 ### Q: Watermark text shows as squares/boxes?
 The system is missing the required font and will fall back to the default font automatically. Consider using an image watermark instead.
 
 ## License
 
 MIT License
+
+## March 2026 Notes
+
+- Shape watermarks use an exclusive `color / blur / mosaic` mode
+- The center editor switches by selected watermark type and exposes text content plus shape feather/effect controls
+- Generating without any watermark is now allowed and returns an unchanged image copy
+- Shape mode selection uses library tabs, while the editor only reveals the matching control for the selected shape

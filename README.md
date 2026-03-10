@@ -1,29 +1,33 @@
-# WebUI-Forge Watermark Adder Extension
+﻿# WebUI-Forge Watermark Adder Extension
 
-[中文文档](README_CN.md)
+[Chinese](README_CN.md)
 
 A watermark extension for Stable Diffusion WebUI Forge with visual editing, real-time preview, and extractable image pack support.
 
 ## Features
 
-- **Text Watermarks**: Create and save custom text watermarks with color, size, opacity controls
-- **Image Watermarks**: Upload and manage image watermarks (supports PNG transparent background)
-- **Visual Editing**: Canvas overlay with mouse-follow preview, click to place
-- **Zoom & Pan**: Scroll to zoom, drag to pan the editing view, double-click to reset
-- **Pixel-based Sizing**: Watermark size in pixels (1–2000px, shortest edge)
-- **Shortcut Controls**:
+- **Text watermarks**: Create and save custom text watermarks with color, size, and opacity controls
+- **Image watermarks**: Upload and manage image watermarks (PNG with transparent background recommended)
+- **Shape watermarks**: Square, rectangle, circle, ellipse with three exclusive effect modes: `color`, `blur`, `mosaic`
+- **Feather**: Soft edge control for shape watermarks
+- **Visual editing**: Canvas overlay with mouse-follow preview, click to place text/image, drag to draw shapes
+- **Select and edit existing watermarks**: Move, resize, rotate, or delete directly on the canvas
+- **Zoom and pan**: Scroll to zoom, drag to pan, double-click to reset
+- **Shortcut controls**:
   - Scroll wheel: Zoom image
   - Left-drag: Pan image
+  - Space + Left-drag: Pan image
   - Double-click: Reset view
   - Ctrl + Scroll: Adjust watermark size (±20px)
   - Shift + Scroll: Adjust rotation angle
   - Alt + Scroll: Adjust opacity
-- **Undo / Clear**: Undo last watermark or clear all
-- **Dual Save Modes**:
+- **Undo / Clear**: Undo the last watermark or clear all
+- **Dual save modes**:
   - Normal save: Standard PNG with watermarks
   - Extractable pack: PNG file that can be renamed to `.zip` to extract the original unwatermarked image
-- **Auto Save**: Auto-save to `outputs/watermarked/` is enabled by default when generating
-- **Fetch Last Image**: Automatically scan `outputs/` folder for the latest generated image (excludes `outputs/watermarked/`)
+- **Auto save**: Auto-save to `outputs/watermarked/` is enabled by default when generating
+- **Fetch last image**: Automatically scan `outputs/` for the latest generated image (excludes `outputs/watermarked/`)
+- **Generate without watermarks**: If no watermark is added, output is the original image copy
 
 ## Installation
 
@@ -37,12 +41,20 @@ A watermark extension for Stable Diffusion WebUI Forge with visual editing, real
 ## Usage
 
 1. Open the **Watermark Adder** tab (top-level, same level as txt2img/img2img)
-2. Upload an image to the editor, or click "Fetch Last Image" to load from `outputs/`
+2. Upload an image, or click **Fetch Last Image** to load from `outputs/`
 3. Create or select a watermark from the library (left panel)
-4. Move mouse over the editor — watermark follows the cursor
-5. Click to place a watermark; drag to pan, scroll to zoom
-6. Click **Generate** to render the final image (auto-saved to `outputs/watermarked/` by default)
-7. Save as normal PNG or extractable pack
+4. Move your mouse over the editor to preview
+5. Click to place a text or image watermark
+6. Drag to draw a shape watermark
+7. Click existing watermarks to edit; drag handles to resize, rotate, or move
+8. Click **Generate** to render the final image (auto-saved to `outputs/watermarked/` by default)
+
+## Editing Tips
+
+- Hold **Shift** while resizing to toggle aspect ratio lock
+- Shape blur controls blur intensity
+- Shape mosaic controls the pixel block size for each tile
+- During zoom or drag, preview temporarily switches to a lighter render for smoother interaction, and refreshes to full quality after you stop
 
 ## Tech Stack
 
@@ -54,3 +66,13 @@ A watermark extension for Stable Diffusion WebUI Forge with visual editing, real
 ## License
 
 MIT License
+
+## 2026-03 Update
+
+- Shape watermarks now support three exclusive effect modes: `color`, `blur`, and `mosaic`
+- Shape editor exposes `feather` plus the matching mode control: color, blur size, or mosaic size
+- Text editor exposes the watermark text content for direct editing
+- Clicking an existing watermark switches the editor panel by watermark type (image, text, shape)
+- The top title was removed so the whole panel starts higher
+- Generate now works even when no watermark has been added
+- Shape mode selection stays in the library tabs; the editor only shows the control for the selected shape mode
